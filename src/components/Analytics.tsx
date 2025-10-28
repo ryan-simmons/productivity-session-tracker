@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { View, Text, TouchableOpacity } from 'react-native';
 import {
     Clock,
     Target,
@@ -15,13 +14,22 @@ import {
     Calendar,
     LineChart as LineChartIcon,
     BarChart2,
-} from 'lucide-react-native'; // MODIFIED: Switched to lucide-react-native
+} from 'lucide-react';
 
-// MODIFIED: Replaced 'recharts' with 'victory-native' for mobile compatibility
-import { VictoryChart, VictoryLine, VictoryArea, VictoryBar, VictoryAxis, VictoryTooltip } from 'victory-native';
-import { Defs, LinearGradient, Stop } from 'react-native-svg';
+import {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    Tooltip,
+    ResponsiveContainer,
+    Area,
+    BarChart,
+    Bar,
+    Cell
+} from 'recharts';
 
-// --- Interfaces (Unchanged) ---
+// --- Interfaces ---
 interface SessionLog {
     productivity_score: number;
     start_delay_minutes: number;
@@ -48,8 +56,8 @@ interface Achievement {
 type ProgressView = 'week' | 'month' | 'year';
 
 // --- Main YourJourney Component ---
+// --- Main YourJourney Component ---
 export function YourJourney() {
-    // --- State and Hooks (Unchanged) ---
     const [logs, setLogs] = useState<SessionLog[]>([]);
     const [stats, setStats] = useState<UserStats | null>(null);
     const [achievements, setAchievements] = useState<Achievement[]>([]);
@@ -83,12 +91,11 @@ export function YourJourney() {
     };
 
     if (loading) {
-        return <View className="text-center py-12"><Text className="text-[#5F85DB] animate-pulse">Loading your journey...</Text></View>;
+        return <div className="text-center py-12 text-[#5F85DB] animate-pulse">Loading your journey...</div>;
     }
-    
-    // --- Data Processing Functions (Unchanged Logic, just changed data structure for victory-native) ---
+
+    // --- Data Processing Functions ---
     const getProgressData = (view: ProgressView) => {
-        // ... (same logic as before) ...
         const days = view === 'week' ? 7 : view === 'month' ? 30 : 365;
         const sinceDate = new Date();
         sinceDate.setDate(sinceDate.getDate() - days);
@@ -108,7 +115,7 @@ export function YourJourney() {
                 monday.setHours(0, 0, 0, 0);
                 monday.setDate(logDate.getDate() + mondayOffset);
                 key = monday.toISOString().split('T')[0];
-            } else { 
+            } else { // 'day'
                 key = logDate.toISOString().split('T')[0];
             }
     
@@ -120,12 +127,17 @@ export function YourJourney() {
     
         const sortedEntries = Array.from(dataMap.entries()).sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime());
     
-        // MODIFIED: Victory requires x, y data points
-        return sortedEntries.map(([key, values], index) => ({
-            x: index,
-            y: Math.round(values.totalScore / values.count),
-            label: `${Math.round(values.totalScore / values.count)}%`
+        let processedData = sortedEntries.map(([key, values]) => ({
+            avg: Math.round(values.totalScore / values.count),
+            label: '' 
         }));
+    
+        const targetLength = view === 'year' ? 52 : days;
+        while (processedData.length < targetLength) {
+            processedData.push({ avg: null, label: '' });
+        }
+    
+        return processedData;
     };
 
     const getProductivityByHour = () => {
@@ -136,70 +148,71 @@ export function YourJourney() {
             hourlyData[hour].totalScore += log.productivity_score;
             hourlyData[hour].count++;
         });
-        // MODIFIED: Victory requires x, y data points
         return Array.from({ length: 24 }, (_, i) => {
             const data = hourlyData[i];
-            const avgScore = data && data.count > 0 ? Math.round(data.totalScore / data.count) : null;
-            const ampm = i >= 12 ? 'PM' : 'AM';
-            let displayHour = i % 12;
-            if (displayHour === 0) displayHour = 12;
-            const label = avgScore === null ? 'No Data' : `${displayHour} ${ampm}\n${avgScore}%`;
-            return { x: i, y: avgScore, label };
+            if (!data || data.count === 0) return { hour: i, avgScore: null }; // Null for no data
+            const avgScore = Math.round(data.totalScore / data.count);
+            return { hour: i, avgScore: avgScore };
         });
     };
-
-    const recentSessionsData = Array.from({ length: 7 }, (_, i) => {
-        const log = logs.slice(0, 7).reverse()[i];
-        // MODIFIED: Victory requires x, y data points
-        return {
-            x: i + 1,
-            y: log ? log.productivity_score : null,
-            label: log ? `${log.productivity_score}%` : 'No Data'
-        };
-    });
-
+    
     const progressChartData = getProgressData(progressView);
     const progressChartTitle = `Your ${progressView === 'week' ? '7-Day' : progressView === 'month' ? '30-Day' : '1-Year'} Progress`;
     const productivityByHourData = getProductivityByHour();
 
+    // --- MODIFICATION START ---
+    // This logic now creates an array of exactly 7 items.
+    // If a session log exists, it's used; otherwise, the score is set to null, creating an empty space.
+    const recentLogs = logs.slice(0, 7).reverse(); 
+    const recentSessionsData = Array.from({ length: 7 }, (_, i) => {
+        const log = recentLogs[i];
+        return {
+            score: log ? log.productivity_score : null,
+            label: i + 1 
+        };
+    });
+    // --- MODIFICATION END ---
+
     // Determine progress trend for chart color
-    const firstDataPoint = progressChartData.find(d => d.y !== null)?.y;
-    const lastDataPoint = [...progressChartData].reverse().find(d => d.y !== null)?.y;
+    const firstDataPoint = progressChartData.find(d => d.avg !== null)?.avg;
+    const lastDataPoint = [...progressChartData].reverse().find(d => d.avg !== null)?.avg;
     let trend = 'neutral';
-    if (typeof firstDataPoint === 'number' && typeof lastDataPoint === 'number' && progressChartData.filter(d => d.y !== null).length > 1) {
+    if (typeof firstDataPoint === 'number' && typeof lastDataPoint === 'number' && progressChartData.filter(d => d.avg !== null).length > 1) {
         if (lastDataPoint > firstDataPoint) trend = 'upward';
         else if (lastDataPoint < firstDataPoint) trend = 'downward';
     }
-    const trendColor = trend === 'upward' ? '#22c55e' : trend === 'downward' ? '#ef4444' : '#60a5fa';
+    const trendColor = trend === 'upward' ? '#22c55e' : trend === 'downward' ? '#ef4444' : '#60a5fa'; // Green, Red, Blue
 
-    // --- Analytics Calculations (Unchanged) ---
+
+    // --- Analytics Calculations ---
     const today = new Date();
-    const dayOfWeek = today.getDay(); 
+    const dayOfWeek = today.getDay(); // Sunday - 0, Monday - 1, ..., Saturday - 6
     const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)); 
+    startOfWeek.setDate(today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)); // Adjust to Monday
     startOfWeek.setHours(0, 0, 0, 0);
 
     const thisWeeksLogs = logs.filter(log => new Date(log.created_at) >= startOfWeek);
     
+    // Calculate raw values, using null when there is not enough info
     const thisWeeksAverageRaw = thisWeeksLogs.length > 0 ? Math.round(thisWeeksLogs.reduce((sum, log) => sum + log.productivity_score, 0) / thisWeeksLogs.length) : null;
     const completionRateRaw = stats && stats.total_sessions > 0 ? Math.round((stats.total_completed / stats.total_sessions) * 100) : null;
     const onTimeRateRaw = stats && stats.total_sessions > 0 ? Math.round((stats.total_on_time / stats.total_sessions) * 100) : null;
 
+    // Other stats calculations
     const perfectSessions = logs.filter(log => log.productivity_score === 100).length;
     const averageDelay = logs.length > 0 ? Math.round(logs.reduce((sum, log) => sum + log.start_delay_minutes, 0) / logs.length) : 0;
     
-    const bestPerformingHour = productivityByHourData.reduce((prev, current) => (current.y !== null && (prev.y === null || current.y > prev.y)) ? current : prev, { x: -1, y: null, label: '' });
+    const bestPerformingHour = productivityByHourData.reduce((prev, current) => (current.avgScore !== null && (prev.avgScore === null || current.avgScore > prev.avgScore)) ? current : prev, { hour: -1, avgScore: null });
 
     let productiveHourString = '';
-    if (bestPerformingHour.y !== null && bestPerformingHour.y > 0) {
-        const hour24 = bestPerformingHour.x;
+    if (bestPerformingHour.avgScore !== null && bestPerformingHour.avgScore > 0) {
+        const hour24 = bestPerformingHour.hour;
         const ampm = hour24 >= 12 ? 'PM' : 'AM';
         let displayHour = hour24 % 12;
         if (displayHour === 0) displayHour = 12;
         productiveHourString = `${displayHour} ${ampm}`;
     }
-    
-    // --- Helper Functions (Unchanged) ---
+
     const getScoreTextColor = (score: number): string => {
         if (score < 60) return 'text-red-400';
         if (score < 80) return 'text-blue-400';
@@ -212,180 +225,232 @@ export function YourJourney() {
         if (score < 80) return '#5F85DB';
         return '#22c55e';
     };
-
-    // --- Charting Tick Formatters (Adjusted for Victory) ---
-    const progressTickFormatter = (value: any, index: number) => {
-        // ... (This function is complex and highly specific to recharts' API, we'll simplify for Victory)
-        // Victory handles tick distribution better automatically. We'll show start, middle, end.
-        const totalPoints = progressChartData.length;
-        if (index === 0) return "Start";
-        if (index === Math.floor(totalPoints / 2)) return "Mid";
-        if (index === totalPoints - 1) return "End";
-        return '';
-    }
-
-    const chartTheme = {
-        axis: {
-            style: {
-                axis: { stroke: 'transparent' },
-                tickLabels: { fill: '#a3a3a3', fontSize: 12, padding: 5 },
-                grid: { stroke: 'rgba(255, 255, 255, 0.1)', strokeDasharray: '2, 5' }
-            }
-        },
-        tooltip: {
-            style: { fill: '#f5f5f5' },
-            flyoutStyle: { fill: 'rgba(28, 28, 30, 0.8)', stroke: 'rgba(255, 255, 255, 0.1)' },
-        }
+    
+    const tooltipStyle = {
+        backgroundColor: 'rgba(28, 28, 30, 0.8)',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        color: '#f5f5f5',
+        borderRadius: '0.75rem',
+        backdropFilter: 'blur(4px)',
     };
 
-    // --- JSX (MODIFIED: Replaced divs with Views, recharts with victory-native) ---
+    const progressTickFormatter = (value: any, index: number) => {
+        const totalPoints = progressChartData.length;
+        if (totalPoints < 1) return '';
+
+        const isFirst = index === 0;
+        const isMiddle = index === Math.floor((totalPoints - 1) / 2);
+        const isLast = index === totalPoints - 1;
+
+        if (!isFirst && !isMiddle && !isLast) {
+            return '';
+        }
+
+        const today = new Date();
+        const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const formatMonthYear = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+
+        if (progressView === 'week') {
+            if (isFirst) {
+                const date = new Date();
+                date.setDate(today.getDate() - 6);
+                return formatDate(date);
+            }
+            if (isMiddle) {
+                const date = new Date();
+                date.setDate(today.getDate() - 3);
+                return formatDate(date);
+            }
+            if (isLast) return formatDate(today);
+        }
+        if (progressView === 'month') {
+            if (isFirst) {
+                const date = new Date();
+                date.setDate(today.getDate() - 29);
+                return formatDate(date);
+            }
+            if (isMiddle) {
+                const date = new Date();
+                date.setDate(today.getDate() - 15);
+                return formatDate(date);
+            }
+            if (isLast) return formatDate(today);
+        }
+        if (progressView === 'year') {
+            if (isFirst) {
+                const date = new Date();
+                date.setFullYear(today.getFullYear() - 1);
+                return formatMonthYear(date);
+            }
+            if (isMiddle) {
+                const date = new Date();
+                date.setMonth(today.getMonth() - 6);
+                return formatMonthYear(date);
+            }
+            if (isLast) return formatMonthYear(today);
+        }
+
+        return '';
+    };
+
     return (
-        <View className="space-y-8">
-            <View className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="space-y-8">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <AnalyticsStatCard
                     icon={<CheckCircle className="w-5 h-5 text-[#5F85DB]" />}
                     title="On-Time Rate"
                     value={onTimeRateRaw !== null ? `${onTimeRateRaw}%` : '-'}
                     valueColor={onTimeRateRaw !== null ? getScoreTextColor(onTimeRateRaw) : undefined}
                 />
-                {/* ... other AnalyticsStatCard instances */}
-            </View>
+                <AnalyticsStatCard
+                    icon={<Target className="w-5 h-5 text-[#5F85DB]" />}
+                    title="Completion Rate"
+                    value={completionRateRaw !== null ? `${completionRateRaw}%` : '-'}
+                    valueColor={completionRateRaw !== null ? getScoreTextColor(completionRateRaw) : undefined}
+                />
+                <AnalyticsStatCard
+                    icon={<Calendar className="w-5 h-5 text-[#5F85DB]" />}
+                    title="This Week's Average"
+                    value={thisWeeksAverageRaw !== null ? `${thisWeeksAverageRaw}%` : '-'}
+                    valueColor={thisWeeksAverageRaw !== null ? getScoreTextColor(thisWeeksAverageRaw) : undefined}
+                />
+                <AnalyticsStatCard icon={<Clock4 className="w-5 h-5 text-[#5F85DB]" />} title="Avg Delay" value={`${averageDelay}m`} />
+                <AnalyticsStatCard icon={<Trophy className="w-5 h-5 text-[#5F85DB]" />} title="Longest Streak" value={stats?.longest_streak || 0} />
+                <AnalyticsStatCard icon={<Star className="w-5 h-5 text-[#5F85DB]" />} title="Perfect Sessions" value={perfectSessions} />
+            </div>
 
-            <View className="bg-black/30 backdrop-blur-lg border border-white/10 rounded-2xl p-6">
-                <View className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4">
-                    <Text className="flex items-center gap-3 text-lg font-bold text-white">
+            <div className="bg-black/30 backdrop-blur-lg border border-white/10 rounded-2xl p-6">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4">
+                    <h2 className="flex items-center gap-3 text-lg font-bold text-white">
                         <LineChartIcon className="text-[#5F85DB]" />
                         {progressChartTitle}
-                    </Text>
-                     <View className="flex flex-row items-center gap-1 bg-white/5 p-1 rounded-lg self-start sm:self-center">
-                        <TouchableOpacity onPress={() => setProgressView('week')} className={`px-3 py-1 rounded-md ${progressView === 'week' ? 'bg-[#5F85DB]' : ''}`}><Text className={`text-sm font-semibold ${progressView === 'week' ? 'text-white' : 'text-neutral-300'}`}>Week</Text></TouchableOpacity>
-                        <TouchableOpacity onPress={() => setProgressView('month')} className={`px-3 py-1 rounded-md ${progressView === 'month' ? 'bg-[#5F85DB]' : ''}`}><Text className={`text-sm font-semibold ${progressView === 'month' ? 'text-white' : 'text-neutral-300'}`}>Month</Text></TouchableOpacity>
-                        <TouchableOpacity onPress={() => setProgressView('year')} className={`px-3 py-1 rounded-md ${progressView === 'year' ? 'bg-[#5F85DB]' : ''}`}><Text className={`text-sm font-semibold ${progressView === 'year' ? 'text-white' : 'text-neutral-300'}`}>Year</Text></TouchableOpacity>
-                    </View>
-                </View>
+                    </h2>
+                    <div className="flex items-center gap-1 bg-white/5 p-1 rounded-lg self-start sm:self-center">
+                        <button onClick={() => setProgressView('week')} className={`px-3 py-1 text-sm font-semibold rounded-md transition ${progressView === 'week' ? 'bg-[#5F85DB] text-white' : 'text-neutral-300 hover:text-white'}`}>Week</button>
+                        <button onClick={() => setProgressView('month')} className={`px-3 py-1 text-sm font-semibold rounded-md transition ${progressView === 'month' ? 'bg-[#5F85DB] text-white' : 'text-neutral-300 hover:text-white'}`}>Month</button>
+                        <button onClick={() => setProgressView('year')} className={`px-3 py-1 text-sm font-semibold rounded-md transition ${progressView === 'year' ? 'bg-[#5F85DB] text-white' : 'text-neutral-300 hover:text-white'}`}>Year</button>
+                    </div>
+                </div>
 
-                {progressChartData.some((d) => d.y !== null) ? (
-                    <View style={{ height: 250 }}>
-                        <VictoryChart height={250} padding={{ top: 20, bottom: 30, left: 40, right: 20 }} theme={chartTheme}>
-                            <Defs>
-                                <LinearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                                    <Stop offset="5%" stopColor={trendColor} stopOpacity={0.4}/>
-                                    <Stop offset="95%" stopColor={trendColor} stopOpacity={0}/>
-                                </LinearGradient>
-                            </Defs>
-                            <VictoryAxis dependentAxis tickFormatter={(t) => `${t}%`} />
-                            <VictoryAxis tickCount={3} tickFormat={progressTickFormatter} />
-                            <VictoryArea
-                                data={progressChartData.filter(d => d.y !== null)}
-                                style={{ data: { fill: "url(#trendGradient)", stroke: trendColor, strokeWidth: 2 } }}
-                                interpolation="monotoneX"
+                {progressChartData.some((d) => d.avg !== null) ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                        <LineChart data={progressChartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                             <defs>
+                                <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={trendColor} stopOpacity={0.4}/>
+                                <stop offset="95%" stopColor={trendColor} stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
+                            <XAxis dataKey="label" stroke="#a3a3a3" fontSize={12} tickLine={false} axisLine={false} tickFormatter={progressTickFormatter} interval={0} />
+                            <YAxis stroke="#a3a3a3" fontSize={12} tickLine={false} axisLine={false} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                            <Tooltip
+                                contentStyle={tooltipStyle}
+                                formatter={(value: number) => [`${value}%`, 'Avg Score']}
+                                labelStyle={{ fontWeight: 'bold' }}
                             />
-                            <VictoryLine
-                                data={progressChartData.filter(d => d.y !== null)}
-                                style={{ data: { stroke: trendColor, strokeWidth: 2 } }}
-                                interpolation="monotoneX"
-                                labelComponent={<VictoryTooltip />}
-                            />
-                        </VictoryChart>
-                    </View>
+                            <Area type="monotone" dataKey="avg" stroke={trendColor} fillOpacity={1} fill="url(#trendGradient)" connectNulls={false} />
+                            <Line type="monotone" dataKey="avg" stroke={trendColor} strokeWidth={2} dot={false} connectNulls={false} />
+                        </LineChart>
+                    </ResponsiveContainer>
                 ) : (
-                    <View className="h-[250px] flex items-center justify-center"><Text className="text-neutral-500">Log a session to see your progress chart.</Text></View>
+                    <div className="h-[250px] flex items-center justify-center text-neutral-500">Log a session to see your progress chart.</div>
                 )}
-            </View>
+            </div>
 
-            {/* Power Hours Chart */}
-             <View className="bg-black/30 backdrop-blur-lg border border-white/10 rounded-2xl p-6">
-                 <Text className="flex items-center gap-3 text-lg font-bold text-white"><Clock className="text-[#5F85DB]" />Your Power Hours</Text>
-                 <Text className="text-neutral-400 mt-1 mb-6">Average scores by hour.</Text>
-                 {logs.length > 0 ? (
-                     <>
-                        <View style={{ height: 250 }}>
-                             <VictoryChart height={250} domainPadding={{ x: 10 }} padding={{ top: 20, bottom: 30, left: 40, right: 20 }} theme={chartTheme}>
-                                 <VictoryAxis dependentAxis tickFormatter={(t) => `${t}%`} />
-                                 <VictoryAxis tickValues={[0, 6, 12, 18, 23]} tickFormatter={(t) => { const h = t % 12; return h === 0 ? 12 : h; }} />
-                                 <VictoryBar
-                                     data={productivityByHourData}
-                                     labelComponent={<VictoryTooltip />}
-                                     style={{
-                                         data: {
-                                             fill: ({ datum }) => getScoreFillColor(datum.y),
-                                         }
-                                     }}
-                                     cornerRadius={{ topLeft: 4, topRight: 4 }}
-                                     barWidth={8}
-                                 />
-                             </VictoryChart>
-                        </View>
+            <div className="bg-black/30 backdrop-blur-lg border border-white/10 rounded-2xl p-6">
+                <h2 className="flex items-center gap-3 text-lg font-bold text-white"><Clock className="text-[#5F85DB]" />Your Power Hours</h2>
+                <p className="text-neutral-400 mt-1 mb-6">Average scores by hour.</p>
+                {logs.length > 0 ? (
+                    <>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={productivityByHourData} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
+                                <XAxis dataKey="hour" stroke="#a3a3a3" fontSize={12} tickLine={false} axisLine={false} interval={1} tickFormatter={(hour) => { const h = hour % 12; return h === 0 ? 12 : h; }} />
+                                <YAxis stroke="#a3a3a3" fontSize={12} tickLine={false} axisLine={false} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                                <Tooltip
+                                    cursor={{ fill: 'rgba(95, 133, 219, 0.1)' }}
+                                    contentStyle={tooltipStyle}
+                                    labelFormatter={(hour) => { const ampm = hour >= 12 ? 'PM' : 'AM'; let displayHour = hour % 12; if (displayHour === 0) displayHour = 12; return `${displayHour}:00 ${ampm}`; }}
+                                    formatter={(value: number) => value === null ? ['No Data', ''] : [`${value}%`, 'Avg Score']}
+                                />
+                                <Bar dataKey="avgScore" radius={[4, 4, 0, 0]} minPointSize={2}>
+                                    {productivityByHourData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={getScoreFillColor(entry.avgScore)} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
                         {productiveHourString && (
-                            <View className="text-center text-neutral-400 text-sm mt-4 flex-row items-center justify-center gap-2">
+                            <div className="text-center text-neutral-400 text-sm mt-4 flex items-center justify-center gap-2">
                                 <Zap className="w-4 h-4 text-[#5F85DB]" />
-                                <Text>You're most productive at: <Text className="font-bold text-neutral-200">{productiveHourString}</Text></Text>
-                            </View>
+                                You're most productive at: <span className="font-bold text-neutral-200">{productiveHourString}</span>
+                            </div>
                         )}
                     </>
                 ) : (
-                    <View className="h-64 flex items-center justify-center"><Text className="text-neutral-500">No session data to display hourly productivity.</Text></View>
+                    <div className="h-64 flex items-center justify-center text-neutral-500">No session data to display hourly productivity.</div>
                 )}
-            </View>
-
-            {/* Recent Sessions Chart */}
-            <View className="bg-black/30 backdrop-blur-lg border border-white/10 rounded-2xl p-6">
-                 <Text className="flex items-center gap-3 text-lg font-bold text-white"><BarChart2 className="text-[#5F85DB]" />Recent Sessions</Text>
-                 <Text className="text-neutral-400 mt-1 mb-6">Last 7 session scores.</Text>
-                 {recentSessionsData.some(session => session.y !== null) ? (
-                    <View style={{ height: 250 }}>
-                        <VictoryChart height={250} domainPadding={{ x: 20 }} padding={{ top: 20, bottom: 30, left: 40, right: 20 }} theme={chartTheme}>
-                            <VictoryAxis dependentAxis tickFormatter={(t) => `${t}%`} />
-                            <VictoryAxis tickFormat={(t) => `S${t}`} />
-                             <VictoryBar
-                                 data={recentSessionsData}
-                                 labelComponent={<VictoryTooltip />}
-                                 style={{
-                                     data: {
-                                         fill: ({ datum }) => getScoreFillColor(datum.y),
-                                     }
-                                 }}
-                                 cornerRadius={{ topLeft: 4, topRight: 4 }}
-                             />
-                        </VictoryChart>
-                    </View>
-                ) : (
-                    <View className="h-64 flex items-center justify-center"><Text className="text-neutral-500">Complete sessions to see your recent history.</Text></View>
-                )}
-            </View>
+            </div>
             
-            {/* Achievements Section */}
-             {achievements.length > 0 && (
-                <View className="bg-black/30 backdrop-blur-lg border border-white/10 rounded-2xl p-6">
-                    <TouchableOpacity onPress={() => setShowAchievements((v) => !v)} className="flex-row items-center justify-between w-full text-left mb-4">
-                        <Text className="flex items-center gap-3 text-lg font-bold text-white"><Trophy className="text-[#5F85DB]" />Your Trophy Case</Text>
+            <div className="bg-black/30 backdrop-blur-lg border border-white/10 rounded-2xl p-6">
+                <h2 className="flex items-center gap-3 text-lg font-bold text-white"><BarChart2 className="text-[#5F85DB]" />Recent Sessions</h2>
+                <p className="text-neutral-400 mt-1 mb-6">Last 7 session scores.</p>
+                {recentSessionsData.some(session => session.score !== null) ? ( // --- MODIFICATION: Check if there's at least one completed session to show the chart
+                    <ResponsiveContainer width="100%" height={250}>
+                        <BarChart data={recentSessionsData} margin={{ top: 5, right: 5, left: -10, bottom: 5 }}>
+                            <XAxis dataKey="label" stroke="#a3a3a3" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#a3a3a3" fontSize={12} tickLine={false} axisLine={false} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                            <Tooltip
+                                cursor={{ fill: 'rgba(95, 133, 219, 0.1)' }}
+                                contentStyle={tooltipStyle}
+                                labelFormatter={(label) => `Session ${label}`}
+                                // --- MODIFICATION START ---
+                                // Update formatter to handle null values for sessions that haven't happened.
+                                formatter={(value: number | null) => value === null ? ['No Data', ''] : [`${value}%`, 'Score']}
+                                // --- MODIFICATION END ---
+                            />
+                            <Bar dataKey="score" radius={[4, 4, 0, 0]} minPointSize={2}>
+                                {recentSessionsData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={getScoreFillColor(entry.score)} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                ) : (
+                    <div className="h-64 flex items-center justify-center text-neutral-500">Complete sessions to see your recent history.</div>
+                )}
+            </div>
+            
+            {achievements.length > 0 && (
+                <div className="bg-black/30 backdrop-blur-lg border border-white/10 rounded-2xl p-6">
+                    <button onClick={() => setShowAchievements((v) => !v)} className="flex items-center justify-between w-full text-left mb-4">
+                        <h2 className="flex items-center gap-3 text-lg font-bold text-white"><Trophy className="text-[#5F85DB]" />Your Trophy Case</h2>
                         {showAchievements ? <ChevronUp className="w-5 h-5 text-neutral-400" /> : <ChevronDown className="w-5 h-5 text-neutral-400" />}
-                    </TouchableOpacity>
+                    </button>
                     {showAchievements && (
-                        <View className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {achievements.map((ach, index) => (
-                                <View key={index} className="bg-white/5 border border-white/10 p-4 rounded-xl">
-                                    <Text className="font-bold text-white mb-1">{ach.achievement_name}</Text>
-                                    {ach.description && <Text className="text-sm text-neutral-400 mb-2">{ach.description}</Text>}
-                                    <Text className="text-xs text-neutral-500">Earned on: {new Date(ach.earned_at).toLocaleDateString()}</Text>
-                                </View>
+                                <div key={index} className="bg-white/5 border border-white/10 p-4 rounded-xl">
+                                    <h4 className="font-bold text-white mb-1">{ach.achievement_name}</h4>
+                                    {ach.description && <p className="text-sm text-neutral-400 mb-2">{ach.description}</p>}
+                                    <p className="text-xs text-neutral-500">Earned on: {new Date(ach.earned_at).toLocaleDateString()}</p>
+                                </div>
                             ))}
-                        </View>
+                        </div>
                     )}
-                </View>
+                </div>
             )}
-        </View>
+        </div>
     );
 }
 
 function AnalyticsStatCard({ icon, title, value, valueColor }: { icon: JSX.Element; title: string; value: string | number; valueColor?: string; }) {
     return (
-        <View className="bg-black/30 backdrop-blur-lg rounded-2xl p-5 border border-white/10 flex-col justify-between transition-all duration-300 hover:border-white/20 hover:scale-[1.02]">
-            <View className="flex-row items-center gap-3 mb-2">
-                <View className="bg-[#26282B] p-2 rounded-lg">{icon}</View>
-                <Text className="text-sm font-medium text-neutral-300">{title}</Text>
-            </View>
-            <Text className={`text-3xl font-bold ${valueColor || 'text-white'}`}>{value}</Text>
-        </View>
+        <div className="bg-black/30 backdrop-blur-lg rounded-2xl p-5 border border-white/10 flex flex-col justify-between transition-all duration-300 hover:border-white/20 hover:scale-[1.02]">
+            <div className="flex items-center gap-3 mb-2">
+                <div className="bg-[#26282B] p-2 rounded-lg">{icon}</div>
+                <span className="text-sm font-medium text-neutral-300">{title}</span>
+            </div>
+            <p className={`text-3xl font-bold ${valueColor || 'text-white'}`}>{value}</p>
+        </div>
     );
 }

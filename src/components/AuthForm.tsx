@@ -1,7 +1,8 @@
+// src/components/AuthForm.tsx
+
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView } from 'react-native';
-import YourIcon from '../assets/logov1.svg'; // MODIFIED: Simplified SVG import
+import YourIcon from '../assets/logov1.svg?react'; // 1. Import your SVG icon
 
 export function AuthForm() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -11,7 +12,8 @@ export function AuthForm() {
   const [loading, setLoading] = useState(false);
   const { signUp, signIn } = useAuth();
 
-  const handleSubmit = async () => { // MODIFIED: Removed event parameter
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError('');
     setLoading(true);
 
@@ -26,75 +28,76 @@ export function AuthForm() {
   };
 
   return (
-    // MODIFIED: SafeAreaView is a good practice for screen components
-    <SafeAreaView className="flex-1 items-center justify-center bg-[#111111] p-4">
-      <View className="bg-black/30 backdrop-blur-lg p-8 rounded-2xl border border-white/10 w-full max-w-md">
-        <View className="flex items-center justify-center mb-8">
-          <YourIcon width={48} height={48} color="#90B8F8" />
-        </View>
+    <div className="min-h-screen flex items-center justify-center bg-[#111111] p-4">
+      <div className="bg-black/30 backdrop-blur-lg p-8 rounded-2xl border border-white/10 w-full max-w-md">
+        <div className="flex items-center justify-center mb-8">
+          {/* 2. Replace the old icon with your logo */}
+          <YourIcon className="w-12 h-12 text-[#90B8F8]" />
+        </div>
 
-        <Text className="text-3xl font-bold text-center mb-2 text-white">
-          Tymly
-        </Text>
-        <Text className="text-center text-neutral-300 mb-8">
+        <h1 className="text-3xl font-bold text-center mb-2 text-white">
+          Tymly {/* 3. Change the app name */}
+        </h1>
+        <p className="text-center text-neutral-300 mb-8">
           {isSignUp ? 'Create an account to get started' : 'Sign in to track your productivity'}
-        </Text>
+        </p>
 
-        <View className="space-y-4">
-          <View>
-            <Text className="block text-sm font-medium text-neutral-300 mb-1">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-neutral-300 mb-1">
               Email
-            </Text>
-            <TextInput
+            </label>
+            <input
+              id="email"
+              type="email"
               value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
+              onChange={(e) => setEmail(e.target.value)}
+              required
               className="w-full px-4 py-2 bg-white/5 border border-white/10 text-white rounded-lg focus:ring-2 focus:ring-[#5F85DB] outline-none transition placeholder-neutral-500"
               placeholder="you@example.com"
-              placeholderTextColor="#a3a3a3"
             />
-          </View>
+          </div>
 
-          <View>
-            <Text className="block text-sm font-medium text-neutral-300 mb-1">
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-neutral-300 mb-1">
               Password
-            </Text>
-            <TextInput
+            </label>
+            <input
+              id="password"
+              type="password"
               value={password}
-              onChangeText={setPassword}
-              secureTextEntry
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
               className="w-full px-4 py-2 bg-white/5 border border-white/10 text-white rounded-lg focus:ring-2 focus:ring-[#5F85DB] outline-none transition placeholder-neutral-500"
               placeholder="••••••••"
-              placeholderTextColor="#a3a3a3"
             />
-          </View>
+          </div>
 
           {error && (
-            <View className="bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-lg">
-              <Text className="text-red-300 text-sm">{error}</Text>
-            </View>
+            <div className="bg-red-500/10 border border-red-500/20 text-red-300 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
           )}
 
-          <TouchableOpacity
-            onPress={handleSubmit}
+          <button
+            type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-[#5F85DB] to-[#90B8F8] py-3 rounded-lg transition-all duration-300 active:opacity-90 disabled:opacity-50"
+            className="w-full bg-gradient-to-r from-[#5F85DB] to-[#90B8F8] text-white py-3 rounded-lg font-bold transition-all duration-300 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Text className="text-white font-bold text-center">
-                {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+            {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
+          </button>
+        </form>
 
-        <View className="mt-6 text-center">
-          <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)}>
-            <Text className="text-[#5F85DB] active:text-[#90B8F8] text-sm font-medium transition text-center">
-                {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </SafeAreaView>
+        <div className="mt-6 text-center">
+          <button
+            onClick={() => setIsSignUp(!isSignUp)}
+            className="text-[#5F85DB] hover:text-[#90B8F8] text-sm font-medium transition"
+          >
+            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
